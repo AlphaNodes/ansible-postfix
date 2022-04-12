@@ -2,6 +2,7 @@
 
 galaxy_info:
   role_name: postfix
+  namespace: alphanodes
   description: Setup smtp server (postfix)
   author: alexandermeindl
   company: AlphaNodes GmbH

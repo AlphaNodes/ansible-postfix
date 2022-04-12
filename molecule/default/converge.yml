@@ -23,6 +23,12 @@
       command: postfix check
       changed_when: false
 
-    - name: Show current configuration
+    - name: Get current postfix configuration
       command: postconf
+      changed_when: false
+      register: postconf_info
+
+    - name: Show current postfix configuration
+      debug:
+        var: postconf_info.stdout_lines
       changed_when: false

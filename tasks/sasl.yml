@@ -1,0 +1,45 @@
+---
+
+- set_fact: postfix_sasl_password_file_db="{{ postfix_sasl_password_file  }}.db"
+
+- name: Ensure sasl packages are installed
+  apt:
+    name: '{{ postfix_sasl_packages }}'
+    state: present
+
+- name: Start the saslauthd service
+  service:
+    name: saslauthd
+    state: started
+    enabled: true
+
+- name: Add postfix to sasl group
+  user:
+    name: postfix
+    groups: sasl
+    append: true
+
+- name: Update sasl password map
+  template:
+    src: postfix/sasl_password_map.j2
+    dest: '{{ postfix_sasl_password_file }}'
+    mode: 0600
+  register: saslrc
+  notify:
+    - restart postfix
+
+- name: Stats for sasl_db
+  stat:
+    path: '{{ postfix_sasl_password_file_db }}'
+  register: sasl_db_exists
+
+- name: Build sasl map
+  command: postmap '{{ postfix_sasl_password_file }}'
+  when: saslrc.changed or not sasl_db_exists.stat.exists
+  notify:
+    - restart postfix
+
+- name: Secure sasl map
+  file:
+    path: '{{ postfix_sasl_password_file_db }}'
+    mode: 0600

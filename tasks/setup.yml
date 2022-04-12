@@ -1,0 +1,107 @@
+---
+
+- name: Be sure postfix is installed
+  apt:
+    name: '{{ postfix_packages }}'
+    state: present
+
+- name: Start the postfix service
+  service:
+    name: postfix
+    state: started
+    enabled: true
+
+- name: Add postfix user to ssl-cert group
+  user:
+    name: postfix
+    groups: ssl-cert
+    append: true
+
+- name: Set relayhost with mxlookup
+  set_fact:
+    real_postfix_relayhost: "{{ postfix_relayhost }}"
+  when: postfix_relayhost_mxlookup
+
+- name: Set relayhost without mxlookup
+  set_fact:
+    real_postfix_relayhost: "[{{ postfix_relayhost }}]"
+  when: not postfix_relayhost_mxlookup
+
+- name: Set relayhost port
+  set_fact:
+    real_postfix_relayhost: "{{ real_postfix_relayhost }}:{{ postfix_relayhost_port }}"
+  when: postfix_relayhost_port is defined
+
+- name: Configure main.cf
+  template:
+    src: postfix/main.cf.j2
+    dest: '{{ postfix_main_cf }}'
+  notify:
+    - restart postfix
+    - build new aliases
+
+- name: Configure master.cf
+  template:
+    src: postfix/master.cf.j2
+    dest: /etc/postfix/master.cf
+  notify:
+    - restart postfix
+
+- name: Update mailname
+  template:
+    src: mailname.j2
+    dest: '{{ postfix_mailname_file }}'
+    owner: root
+    group: root
+    mode: 0644
+  notify: restart postfix
+
+- name: Update aliases
+  template:
+    src: aliases.j2
+    dest: '{{ postfix_aliases_file }}'
+  notify: build new aliases
+
+- name: Install canonical-redirect configuration
+  template:
+    src: postfix/canonical-redirect.j2
+    dest: /etc/postfix/canonical-redirect
+  when: postfix_redirect_all_mails_to is defined
+  register: canonical_redirect
+
+- name: Build canonical-redirect map
+  command: postmap /etc/postfix/canonical-redirect
+  when: postfix_redirect_all_mails_to is defined and canonical_redirect.changed
+  notify: restart postfix
+
+- name: Remove canonical-redirect map (if unused)
+  file:
+    path: '{{ item }}'
+    state: absent
+  loop:
+    - /etc/postfix/canonical-redirect
+    - /etc/postfix/canonical-redirect.db
+  when: postfix_redirect_all_mails_to is undefined
+  notify: restart postfix
+
+- name: Install sender-canonicals
+  template:
+    src: postfix/sender-canonical.j2
+    dest: /etc/postfix/sender-canonical
+  when: postfix_sender_canonicals|length > 0
+  register: sender_canonical
+
+- name: Build sender-canonicals map
+  command: postmap /etc/postfix/sender-canonical
+  when: postfix_sender_canonicals|length > 0 and sender_canonical.changed
+  notify: restart postfix
+
+- name: Remove sender-canonicals map (if unused)
+  file:
+    path: '{{ item }}'
+    state: absent
+  loop:
+    - /etc/postfix/sender-canonical
+    - /etc/postfix/sender-canonical.db
+  when: postfix_sender_canonicals|length == 0
+  notify: restart postfix
